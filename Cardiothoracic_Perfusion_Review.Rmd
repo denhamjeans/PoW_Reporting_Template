@@ -1,0 +1,389 @@
+---
+reportdepartment: "Cardiothoracics"
+title:  | 
+  | Perfusion Data Review
+  | Cardiothoracic Sugery
+author: Rory Denham 
+date: \today
+params:
+  logo: "Images/SESLHDlogo.png"
+  cover: "Images/POWcover.png"
+  iblue: 2b4894
+  igray: d4dbde
+
+documentclass: article
+fontsize: 10
+papersize: a4paper
+output: 
+  IReports::businessReport:
+    keep_tex: TRUE
+    latex_engine: xelatex
+    resetStyleFiles: FALSE
+header-includes: 
+  - \newcommand{\logo}{`r gsub("_", "\\_", params$logo)`}
+  - \newcommand{\cover}{`r gsub("_", "\\_", params$cover)`}
+  - \newcommand{\iblue}{`r params$iblue`}
+  - \newcommand{\igray}{`r params$igray`}
+include-before:
+  - \renewcommand{\contentsname}{ }
+  - \renewcommand{\pagename}{Page}
+---
+
+
+
+```{r setup, include = FALSE}
+# packages
+library(scales)
+library(kableExtra)
+library(dplyr)
+library(knitr)
+library(xtable)
+library(skimr)
+library(tidyverse)
+library(magrittr)
+library(lubridate)
+library(DataExplorer)
+library(ggpubr)
+library(zoo)
+
+#Debugging verbose explaination
+options(tinytex.verbose = TRUE)
+# settings
+knitr::opts_chunk$set(
+	message = FALSE,
+	warning = FALSE,
+	echo = FALSE
+)
+```
+
+
+```{r Load Data, include=FALSE}
+df <- read_csv(file = "Data/revised/qry_Research_CABG_Public_AL2012-2019.csv", 
+               col_types = cols(OpDate = col_datetime(format = "%d/%m/%Y %H:%M:%S"),
+                                Pt_Gender = readr::col_factor(levels = c(1, 2), ordered = F),
+                                OpStatus = readr::col_factor(levels = c('Elective', 'Urgent'), ordered = F),
+                                Adm_DOSA = col_logical(),
+                                CPB_Used = col_logical(),
+                                FU_Death30d = col_logical(),
+                                PO_Inotrope = col_logical(),
+                                PostCPB_SR = col_logical(),
+                                PostCPB_DCCV = col_logical(),
+                                PostCPB_Paced = col_logical(),
+                                PostCPB_PaceAtrial = col_logical(),
+                                PostCPB_PaceVentri = col_logical()
+                                ))
+
+
+df$Pt_Gender <- factor(df$Pt_Gender, levels = 1:2, labels = c('Male', 'Female'))
+
+#drop useless columns
+df_clean = subset(df, select = -c(`Hospital`, `PreOp_MI`, `PreOp_Resus`, `PreOp_Arrhythmia`, `Prev_CardiacProcedure`, `Prev_CardiacSurgery`, `OpDescription`, `Death_30Days_OR_InHosp`, `FU_Death`))
+```
+
+
+
+\maketitle
+\tableofcontents
+\addcontentsline{toc}{section}{Contents}
+\clearpage
+
+\section{Overview}
+
+This summary report uses data derived from the local Prince of Wales Cardiothoracic Database to investigate troponin changes in Isolated Coronary Artery Bypass Grafts (CABG) cases from 01/01/2012 - 31/12/2018 inclusive.
+\newline
+\newline
+Produced for CTS Perfusion Dept. Prince of Wales Hospital.
+\newline
+\newline
+All statistical analysis conducted using R statistical programming language. 
+\newline
+Fully reproducible code is available upon request.
+\newline
+\newline
+Summary Statistics prepared by Rory Denham (Cardiothoracic Data Manager)
+\newline
+\newline
+\newline
+
+\Large Data Parameters: \newline
+\normalsize
+Date Range: 01/01/2012 - 31/12/2018 inclusive \newline
+Exclusions: \newline
+- Hospital = Prince_of_Wales_Public \newline
+- PreOp_MI = FALSE \newline
+- PreOp_Resus = FALSE \newline
+- PreOp_Arrhythmia = FALSE \newline
+- Prev_CardiacSurgery = FALSE \newline
+- OpDescription = CABG (no OPCAB) \newline
+
+
+\section{Data Overview}
+
+\subsection{exclusions}
+
+After a preliminary look at the dataset the following cleaning processes were applied to the raw dataset:
+
+#clean continuous variables
+\newline
+df_clean %<>% mutate(Path_MaxCreat = if_else(Path_MaxCreat > 10, NA_real_, Path_MaxCreat)) #remove values greater than 10
+\newline
+df_clean %<>% mutate(Path_DischCreat = if_else(Path_DischCreat > 10, NA_real_, Path_DischCreat)) #remove values greater than 10
+\newline
+df_clean %<>% mutate(Path_DischHb = if_else(Path_DischHb < 20, NA_real_, Path_DischHb)) #remove values less than 20
+\newline
+df_clean %<>% mutate(CPB_LowTemp = if_else(CPB_LowTemp > 90, NA_real_, CPB_LowTemp))   #remove values with CPB entries over 90
+\newline
+df_clean %<>% mutate(VentHrs_Total = if_else(VentHrs_Total > 24 * 7 * 4 *3, NA_real_, VentHrs_Total)) #where intubation is greater than 3 months (likely an input error) relabel the value as missing
+\newline
+df_clean %<>% mutate(VentHrs_IntraOp = if_else(VentHrs_IntraOp > 200, NA_real_, VentHrs_IntraOp))
+\newline
+\newline
+
+df_clean <- df_clean[!is.na(df_clean$OpDate),]
+
+```{r}
+#clean continuous variables
+df_clean %<>% mutate(Path_MaxCreat = if_else(Path_MaxCreat > 10, NA_real_, Path_MaxCreat)) #remove values greater than 10
+df_clean %<>% mutate(Path_DischCreat = if_else(Path_DischCreat > 10, NA_real_, Path_DischCreat)) #remove values greater than 10
+df_clean %<>% mutate(Path_DischHb = if_else(Path_DischHb < 20, NA_real_, Path_DischHb)) #remove values less than 20
+df_clean %<>% mutate(CPB_LowTemp = if_else(CPB_LowTemp > 90, NA_real_, CPB_LowTemp))   #remove values with CPB entries over 90
+df_clean %<>% mutate(VentHrs_Total = if_else(VentHrs_Total > 24 * 7 * 4 *3, NA_real_, VentHrs_Total)) #where intubation is greater than 3 months (likely an input error) relabel the value as missing
+df_clean %<>% mutate(VentHrs_IntraOp = if_else(VentHrs_IntraOp > 200, NA_real_, VentHrs_IntraOp))
+
+df_clean <- df_clean[!is.na(df_clean$OpDate),]
+```
+
+\newpage
+
+\subsection{Summary}
+
+
+All Data
+\newline
+\newline
+
+```{r echo=FALSE, results='asis'}
+skim_with(numeric = list(iqr = NULL, p25 = NULL, p50= NULL, p75 = NULL, hist = NULL),
+          integer = list(iqr = NULL, p25 = NULL, p50= NULL, p75 = NULL, hist = NULL))
+
+skim(df_clean) %>% kable(format = "latex", booktabs = T)
+```
+
+\subsection{Numeric Variable Distributions}
+
+```{r}
+plot_histogram(df_clean)
+```
+\newpage
+\section{Pathology Investigations}
+
+\subsection{Pathology levels by Year}
+
+```{r}
+plotdata <- df_clean %>% 
+  select(OpDate, Path_MaxTrop, Path_PreOpHb, Path_PreOpCreat, Path_DischHb, Path_DischCreat, Path_MaxCreat) %>% 
+  mutate(OpYear = year(OpDate))
+
+iteration_string <- c("Path_MaxTrop", "Path_PreOpHb", "Path_DischHb", "Path_PreOpCreat", "Path_DischCreat", "Path_MaxCreat")
+p = list()
+for(y_variable in iteration_string){
+      p <- ggboxplot(plotdata, 
+                     title = y_variable,
+                   x = "OpYear",
+                   y = y_variable,
+                   color = "OpYear",
+                   palette = "lancet",
+                   add = "jitter",
+                   outlier.shape = NA,
+                   ylab = y_variable)
+  print(p)
+}
+```
+
+\subsection{Troponin Box Plot - Comparison with all Variables}
+
+Plot troponin as ordinal groups
+
+```{r}
+plot_boxplot(df_clean, 
+             by = "Path_MaxTrop", 
+             ncol = 2)
+```
+
+\section{CPB Measures}
+
+\subsection{CPB Measures by Year}
+
+```{r}
+plotdata <- df_clean %>% 
+  select(OpDate, CPB_BMI, CPB_PerfTime, CPB_XClampTime, CPB_LowTemp) %>% 
+  mutate(OpYear = year(OpDate))
+
+iteration_string <- c('CPB_BMI', 'CPB_PerfTime', 'CPB_XClampTime', 'CPB_LowTemp')
+p = list()
+for(y_variable in iteration_string){
+      p <- ggboxplot(plotdata,
+                     title = y_variable,
+                   x = "OpYear",
+                   y = y_variable,
+                   color = "OpYear",
+                   palette = "lancet",
+                   outlier.shape = NA,
+                   add = "jitter",
+                   ylab = y_variable)
+  print(p)
+}
+```
+\subsection{Operation Count Per Year}
+
+```{r}
+#cases per year?
+df_clean %>% group_by(year(OpDate)) %>% 
+  summarise(Count = n())
+```
+
+\section{Length of Stay}
+
+\subsection{Length of Stay by Year}
+
+```{r}
+plotdata <- df_clean %>% 
+  select(OpDate, Op_PreOpLOS, Op_PostOpLOS, Op_TotalLOS) %>% 
+  mutate(OpYear = year(OpDate))
+
+iteration_string <- c('Op_PreOpLOS', 'Op_PostOpLOS', 'Op_TotalLOS')
+
+for(y_variable in iteration_string){
+      p <- ggboxplot(plotdata,
+                   title = y_variable,
+                   x = "OpYear",
+                   y = y_variable,
+                   color = "OpYear",
+                   palette = "lancet",
+                   add = "jitter",
+                   outlier.shape = NA,
+                   ylab = y_variable)
+  print(p)
+}
+```
+
+\subsection{Length of Stay by Operation Status}
+
+*Dashed line represents the group mean
+
+```{r}
+
+plotdata <- df_clean %>% 
+  select(OpDate, OpStatus, Op_PreOpLOS, Op_PostOpLOS, Op_TotalLOS) %>% 
+  mutate(OpYear = year(OpDate))
+
+iteration_string <- c('Op_PreOpLOS', 'Op_PostOpLOS', 'Op_TotalLOS')
+
+for(x_variable in iteration_string){
+      p <- gghistogram(plotdata,
+                      x = x_variable,
+                      title = x_variable,
+                      add = "mean", 
+                      rug = TRUE,
+                      color = "OpStatus", 
+                      fill = "OpStatus",
+                      palette = c("#00AFBB", "#E7B800"))
+  print(p)
+}
+```
+
+\subsection{Grouped Barcharts Over Time}
+
+
+```{r}
+
+variable_list <- c(quo(Pt_Gender), quo(OpStatus))
+
+for(factor_variable in variable_list) {
+  #we want to build a dataset with 4 columns in order to plot our data correctly.
+  #x axis ticks are plotted as year/month
+  #two columns displayed for each x axis tick (eg. sex - male and female). This is our variable of interest.
+  #lastly we are facetting by year so that the graph does not become too cluttered when plotting multiple years.
+  factor_variable <- enquo(factor_variable)
+  
+  plot_df <- df_clean %>% 
+  mutate(year_month = floor_date(OpDate, unit = "months")) # generate x axis column
+  
+  plot_df <- plot_df %>% 
+  group_by(year_month, !! factor_variable, .drop = FALSE) %>% 
+  tally() #summarise a count for each factor within our variable of interest, for each year/month.
+
+  plot_df %<>% mutate(year = year(year_month)) #create year variable after summarising (if done before we lose the)
+
+  plot <- ggplot(plot_df, aes(year_month, n, fill = !! factor_variable)) + 
+    geom_bar(position= position_dodge2(width = 0.9), stat="identity") + 
+    facet_wrap(. ~ year, scales = "free", ncol = 2) +
+    scale_x_datetime(labels = date_format("%b"), breaks='1 month')
+    
+  print(plot)
+}
+```
+
+```{r}
+
+plot_df <- df_clean %>% 
+  mutate(year_month = floor_date(OpDate, unit = "months")) # generate x axis column  
+
+plot_df <- plot_df %>% 
+  group_by(year_month, .drop = FALSE) %>% 
+  summarise(Mean_HCT = mean(Path_CPBHct)) #summarise a count for each factor within our variable of interest, for each year/month.
+  
+plot_df %<>% mutate(year = year(year_month)) #create year variable after summarising (if done before we lose the)
+
+
+plot <- ggplot(plot_df, aes(year_month, Mean_HCT)) + 
+  geom_bar(position= position_dodge2(width = 0.9), stat="identity") +
+  facet_wrap(. ~ year, scales = "free", ncol = 2) +
+  scale_x_datetime(labels = date_format("%b"), breaks='1 month')
+
+print(plot)
+```
+
+\subsection{Transfusions Over Time}
+
+```{r}
+plot_df <- df_clean %>% 
+  mutate(year_month = floor_date(OpDate, unit = "months")) # generate x axis column  
+
+plot_df <- plot_df %>% 
+  group_by(year_month, .drop = FALSE) %>% 
+  summarise(Mean_CPB_RBC = mean(Bld_CPB_RBC),
+            Mean_CPB_FFP = mean(Bld_CPB_FFP),
+            Mean_CPB_PLT = mean(Bld_CPB_Plt)) #summarise a count for each factor within our variable of interest, for each year/month.
+  
+plot_df %<>% mutate(year = year(year_month)) #create year variable after summarising (if done before we lose the)
+
+variable_list <- c(quo(Mean_CPB_RBC), quo(Mean_CPB_PLT), quo(Mean_CPB_PLT))
+
+for(factor_variable in variable_list) {
+  #we want to build a dataset with 4 columns in order to plot our data correctly.
+  #x axis ticks are plotted as year/month
+  #two columns displayed for each x axis tick (eg. sex - male and female). This is our variable of interest.
+  #lastly we are facetting by year so that the graph does not become too cluttered when plotting multiple years.
+  factor_variable <- enquo(factor_variable)
+
+  plot <- ggplot(plot_df, aes(year_month, !!factor_variable)) + 
+    geom_bar(position= position_dodge2(width = 0.9), stat="identity") +
+    facet_wrap(. ~ year, scales = "free", ncol = 2) +
+    scale_x_datetime(labels = date_format("%b"), breaks='1 month')
+
+  print(plot)
+}
+```
+
+Transfusions by Year
+
+```{r}
+df_clean %>% 
+  group_by(year(OpDate)) %>% 
+  summarise(Units_RBC = sum(Bld_CPB_RBC),
+            Units_FFP = sum(Bld_CPB_FFP, na.rm = T),
+            Units_Plt = sum(Bld_CPB_Plt, na.rm = T))
+```
+
+
